@@ -1,0 +1,65 @@
+---
+- name: Configure docker on managed node then launch a contaienr and use that container as managed node.
+  hosts: dockernode 
+  vars:
+    expose_port: 8080
+    ssh_port: 2222
+  
+  tasks:
+      - name: install docker-py library
+        pip:
+          name: docker-py
+
+      - name: pull image
+        docker_image:
+          name: mtabishk/ansible-container-node
+          source: pull
+
+      - name: run a container
+        docker_container:
+          name: container_managed_node
+          image: mtabishk/ansible-container-node
+          state: started
+          restart: yes
+          ports:
+            - "{{ expose_port }}:80"
+            - "{{ ssh_port }}:22"
+
+      - name: Retrive Name of Docker Container
+        shell: "docker ps --format '{% raw %}{{ .Names }}{% endraw %}'"
+        register: container_name
+
+
+      - name: Retreive Ip of Docker Container
+        shell: "docker inspect --format '{%raw %}{{ .NetworkSettings.IPAddress }}{% endraw %}' $(docker ps --format '{% raw %}{{ .Names }}{% endraw %}')"
+        register: container_ip
+
+      - name: name of container
+        debug:
+          var: container_name.stdout
+      
+      - name: ip of container
+        debug:
+          var: container_ip.stdout
+
+      - name: create file for inventory
+        copy:
+          content: |
+            [containernode]
+            {{ ansible_facts['default_ipv4']['address']}} ansible_ssh_user=devops ansible_ssh_pass=password ansible_ssh_port={{ ssh_port}}
+          dest: /home/ec2-user/dockerinventory
+      
+      - name: fetch the inventory
+        fetch:
+         src: /home/ec2-user/dockerinventory
+         dest: /home/ec2-user/ansible-playbooks/docker_container_conf/inventorydb
+
+      - name: deploy nginx docker container
+        docker_container:
+          image: nginx:stable
+          name: nginx
+          state: started
+          auto_remove: true
+          ports:
+            - "8080:80"
+
